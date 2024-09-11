@@ -1,5 +1,7 @@
 import rclpy
 from rclpy.node import Node
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.callback_groups import ReentrantCallbackGroup
 from std_srvs.srv import Empty
 from std_msgs.msg import UInt16
 from geometry_msgs.msg import WrenchStamped
@@ -10,24 +12,28 @@ class EventDetector(Node):
     def __init__(self):
 
         super().__init__('event_detector')
-
-        self.stop_controller_cli = self.create_client(Empty, 'stop_controller')
-        self.wait_for_srv(self.stop_controller_cli)
+        self.cbgroup = ReentrantCallbackGroup()
+        self.stop_controller_cli = self.create_client(Empty, 'stop_controller',callback_group=self.cbgroup)
+        self.stop_controller_pull_twist = self.create_client(Empty, 'pull_twist/stop_controller')
+        self.wait_for_srv(self.stop_controller_cli)        
+        self.wait_for_srv(self.stop_controller_pull_twist)
         self.stop_controller_req = Empty.Request()
         
-        self.subscriber = self.create_subscription(WrenchStamped, '/force_torque_sensor_broadcaster/wrench', self.wrench_callback, 10)
-        self.pressure_subscriber = self.create_subscription(UInt16, '/pressure', self.pressure_callback, 10) #WUR to set topic
+        self.detect_service = self.create_service(Empty, 'detect_events', self.detect_events,callback_group=self.cbgroup)
+        self.subscriber = self.create_subscription(WrenchStamped, '/ft300_wrench', self.wrench_callback, 10,callback_group=self.cbgroup)
+        self.pressure_subscriber = self.create_subscription(UInt16, '/pressure', self.pressure_callback, 10,callback_group=self.cbgroup) #WUR to set topic
 
         self.force_memory = []
         self.pressure_memory = []
         self.window = 10
         
-        self.timer = self.create_timer(0.01, self.timer_callback)
+        self.timer = self.create_timer(0.01, self.timer_callback,callback_group=self.cbgroup)
         
         self.flag = False
+        self.active = 0
         
         #WUR should adjust these to suit their gripper
-        self.engaged_pressure = 300.0
+        self.engaged_pressure = 550.0
         self.disengaged_pressure = 1000.0
         self.failure_ratio = 0.57
         
@@ -36,22 +42,41 @@ class EventDetector(Node):
         
         #optionally change this (should work well for UR5)
         self.force_change_threshold = -1.0
-        
-        
+    
+    def detect_events(self, request, response):
+
+        self.get_logger().info(f'Start event detection!')
+        self.active = 1
+        return response
+    
     def clear_trial(self):
         
         self.force_memory = []
         self.pressure_memory = []
         self.flag = False
+        self.active = 0
         
     def stop_controller(self):
 
         self.future = self.stop_controller_cli.call_async(self.stop_controller_req)
-        rclpy.spin_until_future_complete(self, self.future)
+        self.future.add_done_callback(self.service_response_callback)
+        # rclpy.spin_until_future_complete(self, self.future)
+        # self.stop_controller_cli.call(self.stop_controller_req)
+        # rclpy.spin_until_future_complete(self, self.future)
+        self.future = self.stop_controller_pull_twist.call_async(self.stop_controller_req)
+
+        self.future.add_done_callback(self.service_response_callback)
+        # rclpy.spin_until_future_complete(self, self.future_2)
         
         self.clear_trial()
         
-    
+    def service_response_callback(self, future):
+        try:
+            response = future.result()
+            self.get_logger().info(f'Stopped controller!')
+        except Exception as e:
+            self.get_logger().error(f'Service call failed: {e}')
+
     def wrench_callback(self,msg):
         wrench = msg.wrench 
 
@@ -59,7 +84,7 @@ class EventDetector(Node):
                                   wrench.force.z])
         
         force_mag = np.linalg.norm(current_force)
-        self.force_memory.append(force_mag)
+        self.force_memory.insert(0,force_mag)
         if len(self.force_memory) > self.window:
             self.force_memory = self.force_memory[0:self.window]
             
@@ -67,7 +92,7 @@ class EventDetector(Node):
         #expects a scalar as a message
         pressure = msg.data 
 
-        self.pressure_memory.append(pressure)
+        self.pressure_memory.insert(0,pressure)
         if len(self.pressure_memory) > self.window:
             self.pressure_memory = self.pressure_memory[0:self.window]
             
@@ -92,6 +117,8 @@ class EventDetector(Node):
         if len(self.force_memory) < self.window or len(self.pressure_memory) < self.window:
             return
         
+        if self.active == 0: 
+            return 
 
         filtered_force = self.moving_average(self.force_memory)
         avg_pressure = np.average(self.pressure_memory)
@@ -107,7 +134,7 @@ class EventDetector(Node):
            
         #if the suction cups are disengaged, the pick failed
         if avg_pressure >= self.pressure_threshold:
-            print("Apple was failed to be picked :( Force: {np.round(filtered_force[0])} Max Force: {np.max(force)}  Bdiff: {cropped_backward_diff}  Pressure: {avg_pressure}")
+            print(f"Apple was failed to be picked :( Force: {np.round(filtered_force[0])} Max Force: {np.max(filtered_force)}  Bdiff: {cropped_backward_diff}  Pressure: {avg_pressure}")
             self.stop_controller()
         
         #if there is a reasonable force 
@@ -117,22 +144,22 @@ class EventDetector(Node):
             
             #check for big force drop
             if float(cropped_backward_diff) <= self.force_change_threshold and avg_pressure < self.pressure_threshold: 
-                print("Apple has been picked! Bdiff: {cropped_backward_diff}   Pressure: {avg_pressure}.\
-                        #Force: {filtered_force[0]} vs. Max Force: {np.max(force)}")
+                print(f"Apple has been picked! Bdiff: {cropped_backward_diff}   Pressure: {avg_pressure}.\
+                        #Force: {filtered_force[0]} vs. Max Force: {np.max(self.force_memory)}")
                 self.stop_controller() 
     
             elif float(cropped_backward_diff) <= self.force_change_threshold and avg_pressure >= self.pressure_threshold:
-                print("Apple was failed to be picked :( Force: {np.round(filtered_force[0])} Max Force: {np.max(force)}  Bdiff: {cropped_backward_diff}  Pressure: {avg_pressure}")
+                print(f"Apple was failed to be picked :( Force: {np.round(filtered_force[0])} Max Force: {np.max(self.force_memory)}  Bdiff: {cropped_backward_diff}  Pressure: {avg_pressure}")
                 self.stop_controller()
                     
         #if force is low, but was high, that's a failure too    
         elif self.flag and filtered_force[0] < 4.5:
-            print("Apple was failed to be picked :( Force: {np.round(filtered_force[0])} Max Force: {np.max(force)}  Bdiff: {cropped_backward_diff}  Pressure: {avg_pressure}")
+            print(f"Apple was failed to be picked :( Force: {np.round(filtered_force[0])} Max Force: {np.max(self.force_memory)}  Bdiff: {cropped_backward_diff}  Pressure: {avg_pressure}")
             self.stop_controller()
 
     def wait_for_srv(self, srv):
         while not srv.wait_for_service(timeout_sec=1.0):
-            self.get_logger().info('service not available, waiting again...')
+            self.get_logger().info(f'{srv.srv_name} service not available, waiting again...')
 
 def main():
 
@@ -140,10 +167,19 @@ def main():
 
     node = EventDetector()
 
-    rclpy.spin(node)
+    # Create a MultiThreadedExecutor
+    executor = MultiThreadedExecutor()
 
-    node.destroy_node()
-    rclpy.shutdown()
+    # Add the node to the executor
+    executor.add_node(node)
+
+    try:
+        # Spin the executor
+        executor.spin()
+    finally:
+        # Clean up
+        node.destroy_node()
+        rclpy.shutdown()
 
 if __name__ == '__main__':
 
