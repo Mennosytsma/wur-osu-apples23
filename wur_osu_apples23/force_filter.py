@@ -13,14 +13,14 @@ class ForceFilter(Node):
 
         self.timer = self.create_timer(0.01, self.timer_callback)
         self.publisher = self.create_publisher(WrenchStamped, '/filtered_wrench' ,10)
-        self.subscriber = self.create_subscription(WrenchStamped, '/force_torque_sensor_broadcaster/wrench', self.subscriber_callback, 10)
+        self.subscriber = self.create_subscription(WrenchStamped, '/ft300_wrench', self.subscriber_callback, 10)
 
         self.memory = []
-        self.window = 150
+        self.window = 30 # 150
 
         self.header = None
 
-        self.b = firwin(self.window, 5, fs=500)
+        self.b = firwin(self.window, 5, fs=100)
 
     def add_value(self,value):
         self.memory.append(value)
@@ -63,10 +63,10 @@ class ForceFilter(Node):
 
 
 def main(args=None):
+
     rclpy.init(args=args)
 
     force_filter = ForceFilter()
-
     rclpy.spin(force_filter)
 
     # Destroy the node explicitly

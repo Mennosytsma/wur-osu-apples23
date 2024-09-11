@@ -34,7 +34,7 @@ setup(
                 'input_tester = wur_osu_apples23.input_tester:main',
                 'recorder = wur_osu_apples23.recorder:main',
                 'force_filter = wur_osu_apples23.force_filter:main',
-                'event_detector = wur_osu_apples23.event_detector:main'
+                'event_detector = wur_osu_apples23.event_detector:main',
         ],
     },
 )
