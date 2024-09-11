@@ -11,7 +11,7 @@ class PTController(Node):
         
         super().__init__('pull_twist_controller')
         
-        self.max_velocity = 0.1 # * 0.6 m/s
+        self.max_velocity = 0.3 # * 0.6 m/s
         self.vel_cmd = Vector3() # * 0.6 m/s
 
         self.publisher = self.create_publisher(TwistStamped, '/servo_node/delta_twist_cmds', 10)
@@ -20,7 +20,7 @@ class PTController(Node):
         
         self.running = False
         self.iter = 0
-        self.max_iter = 200
+        self.max_iter = 500
 
         self.start_service = self.create_service(Empty, 'pull_twist/start_controller', self.start)
         self.stop_service = self.create_service(Empty, 'pull_twist/stop_controller', self.stop)
@@ -42,6 +42,8 @@ class PTController(Node):
 
         self.running = False
         self.iter = 0
+
+        self.get_logger().info("Pull_twist finished")
         return response
 
     ## SUBSCRIBERS & PUBLISHERS
