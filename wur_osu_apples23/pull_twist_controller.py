@@ -11,7 +11,7 @@ class PTController(Node):
         
         super().__init__('pull_twist_controller')
         
-        self.max_velocity = 0.3 # * 0.6 m/s
+        self.max_velocity = 0.5 # * 0.6 m/s
         self.vel_cmd = Vector3() # * 0.6 m/s
 
         self.publisher = self.create_publisher(TwistStamped, '/servo_node/delta_twist_cmds', 10)
@@ -50,7 +50,7 @@ class PTController(Node):
         if self.running:
 
             msg.twist.linear.z = -1*self.max_velocity
-            msg.twist.angular.z = 1.0
+            msg.twist.angular.z = 3.0
             
             self.publisher.publish(msg)
 

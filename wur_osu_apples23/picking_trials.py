@@ -182,7 +182,7 @@ class PickManager(Node):
         self.configure_controller(goals[i])
         self.start_controller()
 
-        selection = input(Press ENTER to stop controller.")
+        selection = input("Press ENTER to stop controller.")
         self.stop_controller()
         time.sleep(0.1)
 
@@ -246,6 +246,8 @@ class PickManager(Node):
                 input("Place probe at IMU {} location. Press ENTER to record point".format(i + 1))
                 imu_locations.append(self.probe_point())
 
+            input("Place probe at IMU {} location. Press ENTER to record point".format(i + 1))
+                imu_locations.append(self.probe_point())
 
             input("Place probe at abscission layer location. Press ENTER to record point".format(i + 1))
             abscission_layer = self.probe_point()

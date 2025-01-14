@@ -28,7 +28,7 @@ class PickController(Node):
 
         self.timer = self.create_timer(0.01, self.timer_callback)
         
-        self.ee_weight = 0.737 # WUR to set (or can uncomment and use set_ee_weight)
+        self.ee_weight = 0.300 # WUR to set (or can uncomment and use set_ee_weight)
         self.force_from_gravity = np.array([0.0, 0.0, 0.0])
         self.last_t = np.array([0.0,0.0,0.0])
 
@@ -87,17 +87,17 @@ class PickController(Node):
             msg.twist.linear = self.vel_cmd        
 
 
-            self.cmd_publisher.publish(msg)
+            # self.cmd_publisher.publish(msg)
 
-            msg2 = Float64()
-            msg2.data = self.goal
-            self.goal_publisher.publish(msg2)
+            # msg2 = Float64()
+            # msg2.data = self.goal
+            # self.goal_publisher.publish(msg2)
 
-            msg3 = Vector3()
-            msg3.x = self.last_t[0]
-            msg3.y = self.last_t[1]
-            msg3.z = self.last_t[2]
-            self.tangent_publisher.publish(msg3)
+            # msg3 = Vector3()
+            # msg3.x = self.last_t[0]
+            # msg3.y = self.last_t[1]
+            # msg3.z = self.last_t[2]
+            # self.tangent_publisher.publish(msg3)
 
     ## HELPERS
 

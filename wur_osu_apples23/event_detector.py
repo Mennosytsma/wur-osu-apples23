@@ -33,7 +33,7 @@ class EventDetector(Node):
         self.active = 0
         
         #WUR should adjust these to suit their gripper
-        self.engaged_pressure = 550.0
+        self.engaged_pressure = 800.0
         self.disengaged_pressure = 1000.0
         self.failure_ratio = 0.57
         
