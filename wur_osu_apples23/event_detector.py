@@ -42,6 +42,9 @@ class EventDetector(Node):
         
         #optionally change this (should work well for UR5)
         self.force_change_threshold = -1.0
+
+        self.force_check = True  # Set to True to use force for detection
+        self.vacuum_check = True  # Set to True to use vacuum for detection
     
     def detect_events(self, request, response):
 
@@ -57,25 +60,21 @@ class EventDetector(Node):
         self.active = 0
         
     def stop_controller(self):
+        # Call both stop services and pass the service name to the callback
+        future1 = self.stop_controller_cli.call_async(self.stop_controller_req)
+        future1.add_done_callback(lambda fut: self.service_response_callback(fut, self.stop_controller_cli.srv_name))
 
-        self.future = self.stop_controller_cli.call_async(self.stop_controller_req)
-        self.future.add_done_callback(self.service_response_callback)
-        # rclpy.spin_until_future_complete(self, self.future)
-        # self.stop_controller_cli.call(self.stop_controller_req)
-        # rclpy.spin_until_future_complete(self, self.future)
-        self.future = self.stop_controller_pull_twist.call_async(self.stop_controller_req)
+        future2 = self.stop_controller_pull_twist.call_async(self.stop_controller_req)
+        future2.add_done_callback(lambda fut: self.service_response_callback(fut, self.stop_controller_pull_twist.srv_name))
 
-        self.future.add_done_callback(self.service_response_callback)
-        # rclpy.spin_until_future_complete(self, self.future_2)
-        
         self.clear_trial()
-        
-    def service_response_callback(self, future):
+
+    def service_response_callback(self, future, service_name):
         try:
             response = future.result()
-            self.get_logger().info(f'Stopped controller!')
+            self.get_logger().info(f'Stopped controller via service: {service_name}')
         except Exception as e:
-            self.get_logger().error(f'Service call failed: {e}')
+            self.get_logger().error(f'Service call to {service_name} failed: {e}')
 
     def wrench_callback(self,msg):
         wrench = msg.wrench 
@@ -131,15 +130,34 @@ class EventDetector(Node):
             j += 1
     
         cropped_backward_diff = np.average(np.array(backwards_diff))
-           
+        
+        # Use vacuum check only
+        if self.vacuum_check and not self.force_check:
+            if avg_pressure >= self.pressure_threshold:
+                print(f"Apple was failed to be picked :( Pressure: {avg_pressure}")
+                self.stop_controller()
+            # Add more vacuum-only logic if needed
+            return
+
+        # Use force check only
+        if self.force_check and not self.vacuum_check:
+            if filtered_force[0] >= 5:
+                self.flag = True
+                if float(cropped_backward_diff) <= self.force_change_threshold:
+                    print(f"Apple has been picked! Bdiff: {cropped_backward_diff}  Force: {filtered_force[0]} vs. Max Force: {np.max(self.force_memory)}")
+                    self.stop_controller()
+            elif self.flag and filtered_force[0] < 4.5:
+                print(f"Apple was failed to be picked :( Force: {np.round(filtered_force[0])} Max Force: {np.max(self.force_memory)}  Bdiff: {cropped_backward_diff}")
+                self.stop_controller()
+            return
+
+        # Use both checks (default)
         #if the suction cups are disengaged, the pick failed
         if avg_pressure >= self.pressure_threshold:
             print(f"Apple was failed to be picked :( Force: {np.round(filtered_force[0])} Max Force: {np.max(filtered_force)}  Bdiff: {cropped_backward_diff}  Pressure: {avg_pressure}")
             self.stop_controller()
-        
         #if there is a reasonable force 
         elif filtered_force[0] >= 5:
-            
             self.flag = True #force was achieved
             
             #check for big force drop
