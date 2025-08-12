@@ -31,16 +31,23 @@ class TfListener(Node):
         try:
             trans = self._tf_buffer.lookup_transform(self.source, self.target1, rclpy.time.Time())
             self.publisher.publish(trans)
-
         except LookupException as e:
             self.get_logger().error('failed to get transform {} \n'.format(repr(e)))
-
+        except Exception as e:
+            if 'ConnectivityException' in str(type(e)) or 'tf2.ConnectivityException' in str(e):
+                self.get_logger().warn('TF tree disconnected: {} \n'.format(repr(e)))
+            else:
+                self.get_logger().error('Unexpected error: {} \n'.format(repr(e)))
         try:
             trans = self._tf_buffer.lookup_transform(self.source, self.target2, rclpy.time.Time())
             self.probe_publisher.publish(trans)
-
         except LookupException as e:
             self.get_logger().error('failed to get transform {} \n'.format(repr(e)))
+        except Exception as e:
+            if 'ConnectivityException' in str(type(e)) or 'tf2.ConnectivityException' in str(e):
+                self.get_logger().warn('TF tree disconnected: {} \n'.format(repr(e)))
+            else:
+                self.get_logger().error('Unexpected error: {} \n'.format(repr(e)))
 
 def main(argv=sys.argv):
     rclpy.init(args=argv)
